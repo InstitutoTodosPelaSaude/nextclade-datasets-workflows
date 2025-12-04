@@ -1,0 +1,45 @@
+{
+  "title": "Zika Virus Genotypes",
+  "maintainers": [
+    {
+      "name": "Instituto Todos pela Saúde",
+      "url": "https://www.itps.org.br/"
+    }
+  ],
+  "data_provenance": [
+    {
+      "name": "NCBI Virus",
+      "url": "https://www.ncbi.nlm.nih.gov/labs/virus/vssi/#/"
+    }
+  ],
+  "build_url": "",
+  "colorings": [
+    {
+      "key": "clade_membership",
+      "title": "Clades",
+      "type": "categorical"
+    },
+    {
+      "key": "country",
+      "title": "Country",
+      "type": "categorical"
+    }
+  ],
+  "geo_resolutions": [
+    "country"
+  ],
+  "display_defaults": {
+    "map_triplicate": true,
+    "color_by": "clade_membership"
+  },
+  "filters": [
+    "clade_membership",
+    "country"
+  ],
+  "panels": [
+    "tree",
+    "map",
+    "entropy",
+    "frequencies"
+  ]
+}
