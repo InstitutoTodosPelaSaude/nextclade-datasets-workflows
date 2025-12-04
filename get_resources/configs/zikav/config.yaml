@@ -1,0 +1,24 @@
+# Configuration for Zika virus dataset generation
+virus_name: "zikav"
+dataset_name: "zikav_dataset"
+
+# Output directory (all results will be created inside this directory)
+output_dir: "runs/zikav"
+reference_code: "NC_035889.1"
+taxon_id: 64320
+
+# Sequence filtering parameters
+min_length: 9714  # 90% of genome length (~10.8kb)
+max_length: ""    # No max length filter for single-segment viruses
+max_seqs: 1100
+allowed_divergence: 1500
+
+# Phylogenetic parameters
+rooting: "mid_point"  # Options: mid_point, or an accession for outgroup rooting
+
+# Script options
+include_parent_features: true  # For generate_from_genbank.py
+
+# Example sequences sampling
+example_sequences_count: 100
+example_sequences_seed: 42

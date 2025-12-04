@@ -1,0 +1,460 @@
+"""
+Generic Snakemake workflow for generating Nextclade datasets.
+
+Supports both single-segment viruses (e.g., Zika) and multi-segment viruses
+(e.g., Oropouche L, M, S segments) via configurable YAML files.
+
+Usage:
+    snakemake --configfile configs/zikav/config.yaml --cores 4
+    snakemake --configfile configs/orov_s/config.yaml --cores 4
+"""
+
+import os
+import json
+
+# Validate required config keys
+required_keys = [
+    "virus_name", "dataset_name", "reference_code", "taxon_id",
+    "min_length", "max_seqs", "allowed_divergence", "rooting"
+]
+for key in required_keys:
+    if key not in config:
+        raise ValueError(f"Missing required config key: {key}")
+
+# Configuration variables
+VIRUS_NAME = config["virus_name"]
+DATASET_NAME = config["dataset_name"]
+REFERENCE_CODE = config["reference_code"]
+TAXON_ID = config["taxon_id"]
+MIN_LENGTH = str(config["min_length"])
+MAX_LENGTH = str(config.get("max_length", ""))
+MAX_SEQS = str(config["max_seqs"])
+ALLOWED_DIVERGENCE = str(config["allowed_divergence"])
+ROOTING = config["rooting"]
+INCLUDE_PARENT_FEATURES = config.get("include_parent_features", False)
+EXAMPLE_SEQUENCES_COUNT = config.get("example_sequences_count", 100)
+EXAMPLE_SEQUENCES_SEED = config.get("example_sequences_seed", 42)
+
+# Derive paths from config file location
+CONFIG_DIR = os.path.dirname(workflow.configfiles[0])
+RESOURCES_DIR = os.path.join(CONFIG_DIR, "resources")
+
+# Base output directory (all results go inside this directory)
+BASE_OUTPUT_DIR = config.get("output_dir", ".")
+
+# Output directories (relative to BASE_OUTPUT_DIR)
+DATA_DIR = f"{BASE_OUTPUT_DIR}/data/{VIRUS_NAME}"
+RESULTS_DIR = f"{BASE_OUTPUT_DIR}/results/{VIRUS_NAME}"
+OUTPUT_DIR = f"{BASE_OUTPUT_DIR}/output/{VIRUS_NAME}"
+DATASET_DIR = f"{BASE_OUTPUT_DIR}/{DATASET_NAME}"
+TMP_DIR = f"{BASE_OUTPUT_DIR}/tmp/{VIRUS_NAME}"
+TEST_OUT_DIR = f"{BASE_OUTPUT_DIR}/test_out/{VIRUS_NAME}"
+
+
+def extract_gene_names(gff3_path):
+    """
+    Parses a GFF3 file and returns a list of gene names.
+    """
+    gene_names = []
+    with open(gff3_path, "r") as f:
+        for line in f:
+            if "gene_name" in line:
+                fields = line.strip().split("\t")
+                if len(fields) >= 9:
+                    attributes = fields[8]
+                    gene_name = attributes.split("=")[-1]
+                    gene_names.append(gene_name)
+    return gene_names
+
+
+rule all:
+    input:
+        TEST_OUT_DIR
+
+
+rule get_reference:
+    params:
+        output_dir=OUTPUT_DIR,
+        reference_code=REFERENCE_CODE,
+        parent_features_flag="--include-parent-features" if INCLUDE_PARENT_FEATURES else "",
+    output:
+        reference=f"{OUTPUT_DIR}/reference.fasta",
+        reference_annotation=f"{OUTPUT_DIR}/genome_annotation.gff3",
+        reference_gb=f"{OUTPUT_DIR}/reference.gb"
+    shell:
+        """
+        python scripts/generate_from_genbank.py \
+            --reference {params.reference_code} \
+            {params.parent_features_flag} \
+            --output-dir {params.output_dir}
+        """
+
+
+rule fetch_ncbi_dataset_package:
+    output:
+        dataset_package=temp(f"{DATA_DIR}/ncbi_dataset.zip"),
+    retries: 5
+    shell:
+        """
+        mkdir -p {DATA_DIR}
+        datasets download virus genome taxon {TAXON_ID} \
+            --no-progressbar \
+            --filename {output.dataset_package}
+        """
+
+
+rule extract_ncbi_dataset_sequences:
+    input:
+        dataset_package=f"{DATA_DIR}/ncbi_dataset.zip",
+    output:
+        ncbi_dataset_sequences=f"{DATA_DIR}/sequences.fasta",
+    shell:
+        """
+        unzip -jp {input.dataset_package} \
+            ncbi_dataset/data/genomic.fna \
+        | seqkit seq -i -w0 \
+        > {output.ncbi_dataset_sequences}
+        """
+
+
+rule format_ncbi_dataset_report:
+    input:
+        dataset_package=f"{DATA_DIR}/ncbi_dataset.zip",
+    output:
+        ncbi_dataset_tsv=temp(f"{DATA_DIR}/metadata_raw.tsv"),
+    params:
+        fields_to_include="accession,isolate-collection-date,geo-location,geo-region,isolate-lineage,release-date,submitter-affiliation,submitter-names",
+    shell:
+        """
+        dataformat tsv virus-genome \
+            --package {input.dataset_package} \
+            --fields {params.fields_to_include:q} \
+            > {output.ncbi_dataset_tsv}
+        """
+
+
+rule rename_columns:
+    input:
+        ncbi_dataset_tsv=f"{DATA_DIR}/metadata_raw.tsv",
+    output:
+        ncbi_dataset_tsv=f"{DATA_DIR}/metadata.tsv",
+    shell:
+        """
+        sed -i -e 's/"//g' {input.ncbi_dataset_tsv}
+        csvtk rename -t -f Accession,"Isolate Collection date" -n strain,date \
+            {input.ncbi_dataset_tsv} \
+            > {output.ncbi_dataset_tsv}
+        """
+
+
+rule add_reference_to_include:
+    """
+    Create an include file for augur filter
+    """
+    input:
+        include=f"{RESOURCES_DIR}/include.txt",
+    output:
+        f"{RESULTS_DIR}/include.txt",
+    shell:
+        """
+        mkdir -p {RESULTS_DIR}
+        cp {input.include} {output}
+        echo "{REFERENCE_CODE}" >> {output}
+        """
+
+
+rule filter:
+    """
+    Subsample to max_seqs sequences.
+    Filter sequences by length constraints.
+    """
+    input:
+        sequences=f"{DATA_DIR}/sequences.fasta",
+        metadata=f"{DATA_DIR}/metadata.tsv",
+        include=f"{RESULTS_DIR}/include.txt",
+    output:
+        filtered_sequences=f"{RESULTS_DIR}/filtered_sequences_raw.fasta",
+        filtered_metadata=f"{RESULTS_DIR}/filtered_metadata_raw.tsv",
+    params:
+        min_length="" if MIN_LENGTH == "" else "--min-length " + MIN_LENGTH,
+        max_length="" if MAX_LENGTH == "" else "--max-length " + MAX_LENGTH,
+        max_seqs=MAX_SEQS,
+        subsample_seed=EXAMPLE_SEQUENCES_SEED,
+    shell:
+        """
+        augur filter \
+            --sequences {input.sequences} \
+            --metadata {input.metadata} \
+            {params.min_length} \
+            {params.max_length} \
+            --include {input.include} \
+            --subsample-max-sequences {params.max_seqs} \
+            --subsample-seed {params.subsample_seed} \
+            --output {output.filtered_sequences} \
+            --output-metadata {output.filtered_metadata}
+        """
+
+
+rule align:
+    input:
+        sequences=f"{RESULTS_DIR}/filtered_sequences_raw.fasta",
+        reference=rules.get_reference.output.reference,
+        annotation=rules.get_reference.output.reference_annotation,
+    output:
+        alignment=f"{RESULTS_DIR}/aligned.fasta",
+        tsv=f"{RESULTS_DIR}/nextclade.tsv",
+    params:
+        translation_template=lambda w: f"{RESULTS_DIR}/translations/cds_{{cds}}.translation.fasta",
+    shell:
+        """
+        nextclade run \
+            {input.sequences} \
+            --input-ref {input.reference} \
+            --input-annotation {input.annotation} \
+            --output-translations {params.translation_template} \
+            --output-tsv {output.tsv} \
+            --output-fasta {output.alignment}
+        """
+
+
+rule get_outliers:
+    """
+    Automatically identify sequences with too many substitutions
+    (likely sequencing errors or low quality/misannotated sequences)
+    """
+    input:
+        nextclade=f"{RESULTS_DIR}/nextclade.tsv",
+    output:
+        outliers=f"{RESULTS_DIR}/outliers.txt",
+        tmp=temp(f"{TMP_DIR}/outliers.txt"),
+    params:
+        allowed_divergence=ALLOWED_DIVERGENCE,
+        tmp_dir=TMP_DIR,
+    shell:
+        """
+        mkdir -p {params.tmp_dir}
+        tsv-filter -H -v --is-numeric totalSubstitutions {input.nextclade} \
+        > {output.tmp}
+        tsv-filter -H \
+            --is-numeric totalSubstitutions \
+            --gt totalSubstitutions:{params.allowed_divergence} \
+            {input.nextclade} \
+        | tail -n +2 >> {output.tmp}
+        cat {output.tmp} \
+        | tsv-select -H -f seqName \
+        | tail -n +2 > {output.outliers}
+        """
+
+
+rule exclude:
+    """
+    Allow for manual and automatic exclusion of sequences
+    """
+    input:
+        sequences=f"{RESULTS_DIR}/aligned.fasta",
+        metadata=f"{DATA_DIR}/metadata.tsv",
+        exclude=f"{RESOURCES_DIR}/exclude.txt",
+        outliers=f"{RESULTS_DIR}/outliers.txt",
+    output:
+        filtered_sequences=f"{RESULTS_DIR}/filtered_aligned.fasta",
+        filtered_metadata=f"{RESULTS_DIR}/filtered_metadata.tsv",
+        strains=f"{RESULTS_DIR}/tree_strains.txt",
+    shell:
+        """
+        augur filter \
+            --sequences {input.sequences} \
+            --metadata {input.metadata} \
+            --exclude {input.exclude} {input.outliers} \
+            --output {output.filtered_sequences} \
+            --output-metadata {output.filtered_metadata} \
+            --output-strains {output.strains}
+        """
+
+
+rule tree:
+    input:
+        alignment=f"{RESULTS_DIR}/filtered_aligned.fasta",
+    params:
+        tree_argument="--seed 123"
+    output:
+        tree=f"{RESULTS_DIR}/tree_raw.nwk",
+    shell:
+        """
+        augur tree \
+            --alignment {input.alignment} \
+            --output {output.tree} \
+            --tree-builder-args '{params.tree_argument}'
+        """
+
+
+rule refine:
+    input:
+        tree=f"{RESULTS_DIR}/tree_raw.nwk",
+        alignment=f"{RESULTS_DIR}/filtered_aligned.fasta",
+    output:
+        tree=f"{RESULTS_DIR}/tree.nwk",
+        node_data=f"{RESULTS_DIR}/branch_lengths.json",
+    shell:
+        """
+        augur refine \
+            --tree {input.tree} \
+            --alignment {input.alignment} \
+            --root {ROOTING} \
+            --keep-polytomies \
+            --divergence-units mutations \
+            --output-node-data {output.node_data} \
+            --output-tree {output.tree}
+        """
+
+
+rule ancestral:
+    input:
+        tree=f"{RESULTS_DIR}/tree.nwk",
+        alignment=f"{RESULTS_DIR}/filtered_aligned.fasta",
+        annotation=rules.get_reference.output.reference_gb,
+        gff3=rules.get_reference.output.reference_annotation,
+    params:
+        translation_template=f"{RESULTS_DIR}/translations/cds_%GENE.translation.fasta",
+        output_translation_template=f"{RESULTS_DIR}/translations/cds_%GENE.ancestral.fasta",
+        genes=lambda wc, input: " ".join(extract_gene_names(input.gff3))
+    output:
+        node_data=f"{RESULTS_DIR}/muts.json",
+    shell:
+        """
+        augur ancestral \
+            --tree {input.tree} \
+            --alignment {input.alignment} \
+            --annotation {input.annotation} \
+            --root-sequence {input.annotation} \
+            --genes {params.genes} \
+            --translations {params.translation_template} \
+            --output-node-data {output.node_data} \
+            --output-translations {params.output_translation_template}
+        """
+
+
+rule dummy_clades:
+    """
+    Nextclade requires clade membership to be specified for each node.
+    This rule creates clade memberships from a TSV file.
+    """
+    input:
+        json=f"{RESULTS_DIR}/branch_lengths.json",
+        clades=f"{RESOURCES_DIR}/node_clades.tsv"
+    output:
+        f"{RESULTS_DIR}/dummy_clades.json",
+    run:
+        clade_map = {}
+        with open(input.clades) as f:
+            for line in f:
+                if line.strip():
+                    parts = line.strip().split("\t")
+                    if len(parts) >= 2:
+                        node, clade = parts[0], parts[1]
+                        clade_map[node] = clade
+
+        with open(input.json) as f:
+            data = json.load(f)
+
+        nodes = data.get("nodes", {})
+        new_nodes = {
+            node: {"clade_membership": clade_map.get(node, "Unknown")}
+            for node in nodes
+        }
+
+        data["nodes"] = new_nodes
+
+        with open(output[0], "w") as f:
+            json.dump(data, f, indent=2)
+
+
+rule export:
+    input:
+        tree=f"{RESULTS_DIR}/tree.nwk",
+        metadata=f"{RESULTS_DIR}/filtered_metadata.tsv",
+        mutations=f"{RESULTS_DIR}/muts.json",
+        branch_lengths=f"{RESULTS_DIR}/branch_lengths.json",
+        clades=f"{RESULTS_DIR}/dummy_clades.json",
+        auspice_config=f"{RESOURCES_DIR}/auspice_config.json",
+    output:
+        auspice=f"{RESULTS_DIR}/auspice.json",
+    shell:
+        """
+        augur export v2 \
+            --tree {input.tree} \
+            --metadata {input.metadata} \
+            --auspice-config {input.auspice_config} \
+            --node-data {input.mutations} {input.branch_lengths} {input.clades} \
+            --output {output.auspice}
+        """
+
+
+rule subsample_example_sequences:
+    input:
+        all_sequences=f"{DATA_DIR}/sequences.fasta",
+        tree_strains=f"{RESULTS_DIR}/tree_strains.txt",
+        exclude=f"{RESOURCES_DIR}/exclude.txt",
+    output:
+        example_sequences=f"{RESULTS_DIR}/example_sequences.fasta",
+    params:
+        min_length_filter="" if MIN_LENGTH == "" else f"-m {MIN_LENGTH}",
+        max_length_filter="" if MAX_LENGTH == "" else f"-M {MAX_LENGTH}",
+        sample_count=EXAMPLE_SEQUENCES_COUNT,
+        sample_seed=EXAMPLE_SEQUENCES_SEED,
+    shell:
+        """
+        # Combine tree sequences and excluded sequences into a single exclusion list
+        cat {input.tree_strains} {input.exclude} | sort -u > {input.tree_strains}.combined_exclude.txt
+        # Exclude combined list from all sequences and filter by length
+        seqkit grep -v -f {input.tree_strains}.combined_exclude.txt {input.all_sequences} \
+        | seqkit seq {params.min_length_filter} {params.max_length_filter} \
+        | seqkit sample -n {params.sample_count} -s {params.sample_seed} > {output.example_sequences}
+        rm {input.tree_strains}.combined_exclude.txt
+        """
+
+
+rule assemble_dataset:
+    input:
+        tree=f"{RESULTS_DIR}/auspice.json",
+        reference=rules.get_reference.output.reference,
+        annotation=rules.get_reference.output.reference_annotation,
+        sequences=f"{RESULTS_DIR}/example_sequences.fasta",
+        pathogen=f"{RESOURCES_DIR}/pathogen.json",
+    output:
+        tree=f"{DATASET_DIR}/tree.json",
+        reference=f"{DATASET_DIR}/reference.fasta",
+        annotation=f"{DATASET_DIR}/genome_annotation.gff3",
+        sequences=f"{DATASET_DIR}/sequences.fasta",
+        pathogen=f"{DATASET_DIR}/pathogen.json",
+        readme=f"{DATASET_DIR}/README.md",
+        changelog=f"{DATASET_DIR}/CHANGELOG.md",
+        dataset_zip=f"{BASE_OUTPUT_DIR}/{DATASET_NAME}.zip",
+    params:
+        dataset_dir=DATASET_DIR,
+    shell:
+        """
+        mkdir -p {params.dataset_dir}
+        cp {input.tree} {output.tree}
+        cp {input.reference} {output.reference}
+        cp {input.annotation} {output.annotation}
+        cp {input.sequences} {output.sequences}
+        cp {input.pathogen} {output.pathogen}
+        touch {output.readme}
+        touch {output.changelog}
+        zip -rj {output.dataset_zip} {params.dataset_dir}/*
+        """
+
+
+rule test:
+    input:
+        dataset=f"{BASE_OUTPUT_DIR}/{DATASET_NAME}.zip",
+        sequences=f"{DATASET_DIR}/sequences.fasta",
+    output:
+        output=directory(TEST_OUT_DIR),
+    shell:
+        """
+        nextclade run \
+            --input-dataset {input.dataset} \
+            --output-all {output.output} \
+            {input.sequences}
+        """

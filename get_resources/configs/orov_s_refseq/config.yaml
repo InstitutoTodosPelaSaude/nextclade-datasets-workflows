@@ -1,0 +1,26 @@
+# Configuration for OROV segment S with RefSeq reference
+virus_name: "orov_s"
+dataset_name: "orov_s_refseq_dataset"
+
+# Output directory
+output_dir: "runs/orov_s_refseq"
+
+# Reference information
+reference_code: "NC_005777.1"  # RefSeq S segment
+taxon_id: 118655
+
+# Sequence filtering parameters
+min_length: 603    # ~80% of S segment (~754bp)
+max_length: 1000   # Filter to keep only S segment
+max_seqs: 1100
+allowed_divergence: 600
+
+# Phylogenetic parameters
+rooting: "mid_point"
+
+# Script options
+include_parent_features: false
+
+# Example sequences sampling
+example_sequences_count: 100
+example_sequences_seed: 42

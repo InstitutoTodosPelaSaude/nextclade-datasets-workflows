@@ -1,0 +1,26 @@
+# Configuration for OROV segment M with Tefe reference
+virus_name: "orov_m"
+dataset_name: "orov_m_tefe_dataset"
+
+# Output directory
+output_dir: "runs/orov_m_tefe"
+
+# Reference information
+reference_code: "PP154171.1"  # Tefe M segment
+taxon_id: 118655
+
+# Sequence filtering parameters
+min_length: 3600   # ~80% of M segment (~4.4kb)
+max_length: 5000   # Filter to keep only M segment
+max_seqs: 1100
+allowed_divergence: 1000
+
+# Phylogenetic parameters
+rooting: "mid_point"
+
+# Script options
+include_parent_features: false
+
+# Example sequences sampling
+example_sequences_count: 100
+example_sequences_seed: 42
