@@ -1,5 +1,7 @@
 zikav/results
 zikav/.snakemake
+orov/results
+orov/.snakemake
 get_resources/.snakemake
 get_resources/runs
 get_resources/tests
