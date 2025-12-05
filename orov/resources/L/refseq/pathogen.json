@@ -44,21 +44,21 @@
       "ignoredFrameShifts": [
         {
           "codonRange": {
-            "begin": 789,
+            "begin": 788,
             "end": 792
           },
           "cdsName": "L"
         },
         {
           "codonRange": {
-            "begin": 798,
+            "begin": 797,
             "end": 800
           },
           "cdsName": "L"
         },
         {
           "codonRange": {
-            "begin": 847,
+            "begin": 846,
             "end": 855
           },
           "cdsName": "L"
