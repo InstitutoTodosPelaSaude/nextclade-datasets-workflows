@@ -1,7 +1,7 @@
 """
 Generic Snakemake workflow for generating Nextclade datasets.
 
-Supports both single-segment viruses (e.g., Zika) and multi-segment viruses
+Supports both unsegmented viruses (e.g., Zika) and multi-segment viruses
 (e.g., Oropouche L, M, S segments) via configurable YAML files.
 
 Usage:
@@ -34,6 +34,9 @@ ROOTING = config["rooting"]
 INCLUDE_PARENT_FEATURES = config.get("include_parent_features", False)
 EXAMPLE_SEQUENCES_COUNT = config.get("example_sequences_count", 100)
 EXAMPLE_SEQUENCES_SEED = config.get("example_sequences_seed", 42)
+
+# Optional segment config for segmented viruses (e.g., "L", "M", "S")
+SEGMENT = config.get("segment", "")
 
 # Derive paths from config file location
 CONFIG_DIR = os.path.dirname(workflow.configfiles[0])
@@ -92,7 +95,7 @@ rule get_reference:
 
 rule fetch_ncbi_dataset_package:
     output:
-        dataset_package=temp(f"{DATA_DIR}/ncbi_dataset.zip"),
+        dataset_package=f"{DATA_DIR}/ncbi_dataset.zip",
     retries: 5
     shell:
         """
@@ -103,9 +106,74 @@ rule fetch_ncbi_dataset_package:
         """
 
 
-rule extract_ncbi_dataset_sequences:
+rule extract_ncbi_data_report:
+    """
+    Extract data_report.jsonl from the NCBI dataset package and convert to TSV.
+    This TSV includes segment information for segmented viruses.
+    """
     input:
         dataset_package=f"{DATA_DIR}/ncbi_dataset.zip",
+    output:
+        data_report_jsonl=temp(f"{DATA_DIR}/data_report.jsonl"),
+        data_report_tsv=temp(f"{DATA_DIR}/data_report.tsv"),
+    shell:
+        """
+        unzip -jp {input.dataset_package} ncbi_dataset/data/data_report.jsonl \
+            > {output.data_report_jsonl}
+        dataformat tsv virus-genome \
+            --inputfile {output.data_report_jsonl} \
+            > {output.data_report_tsv}
+        """
+
+
+rule filter_by_segment:
+    """
+    Filter accessions by segment for segmented viruses.
+    Produces a list of accessions that match the specified segment.
+    If SEGMENT is not set (unsegmented viruses), outputs all accessions.
+    """
+    input:
+        data_report_tsv=f"{DATA_DIR}/data_report.tsv",
+    output:
+        segment_accessions=f"{DATA_DIR}/segment_accessions.txt",
+    params:
+        segment=SEGMENT,
+    run:
+        import pandas as pd
+        
+        df = pd.read_csv(input.data_report_tsv, sep="\t", dtype=str)
+        
+        if params.segment:
+            # Filter by segment column
+            if "Segment" in df.columns:
+                segment_col = "Segment"
+            elif "Virus Segment" in df.columns:
+                segment_col = "Virus Segment"
+            elif "segment" in df.columns:
+                segment_col = "segment"
+            else:
+                raise ValueError(f"Segment column not found in data report. Available columns: {df.columns.tolist()}")
+            
+            # Filter rows where segment matches (case-insensitive)
+            filtered = df[df[segment_col].str.upper() == params.segment.upper()]
+            accessions = filtered["Accession"].dropna().unique().tolist()
+        else:
+            # No segment filtering - use all accessions
+            accessions = df["Accession"].dropna().unique().tolist()
+        
+        with open(output.segment_accessions, "w") as f:
+            for acc in accessions:
+                f.write(f"{acc}\n")
+
+
+rule extract_ncbi_dataset_sequences:
+    """
+    Extract sequences from the NCBI dataset package.
+    If segment filtering is enabled, only extract sequences matching the segment.
+    """
+    input:
+        dataset_package=f"{DATA_DIR}/ncbi_dataset.zip",
+        segment_accessions=f"{DATA_DIR}/segment_accessions.txt",
     output:
         ncbi_dataset_sequences=f"{DATA_DIR}/sequences.fasta",
     shell:
@@ -113,6 +181,7 @@ rule extract_ncbi_dataset_sequences:
         unzip -jp {input.dataset_package} \
             ncbi_dataset/data/genomic.fna \
         | seqkit seq -i -w0 \
+        | seqkit grep -f {input.segment_accessions} \
         > {output.ncbi_dataset_sequences}
         """
 
@@ -123,7 +192,7 @@ rule format_ncbi_dataset_report:
     output:
         ncbi_dataset_tsv=temp(f"{DATA_DIR}/metadata_raw.tsv"),
     params:
-        fields_to_include="accession,isolate-collection-date,geo-location,geo-region,isolate-lineage,release-date,submitter-affiliation,submitter-names",
+        fields_to_include="accession,isolate-collection-date,geo-location,geo-region",
     shell:
         """
         dataformat tsv virus-genome \
@@ -134,8 +203,12 @@ rule format_ncbi_dataset_report:
 
 
 rule rename_columns:
+    """
+    Rename columns and filter metadata by segment accessions for segmented viruses.
+    """
     input:
         ncbi_dataset_tsv=f"{DATA_DIR}/metadata_raw.tsv",
+        segment_accessions=f"{DATA_DIR}/segment_accessions.txt",
     output:
         ncbi_dataset_tsv=f"{DATA_DIR}/metadata.tsv",
     shell:
@@ -143,7 +216,8 @@ rule rename_columns:
         sed -i -e 's/"//g' {input.ncbi_dataset_tsv}
         csvtk rename -t -f Accession,"Isolate Collection date" -n strain,date \
             {input.ncbi_dataset_tsv} \
-            > {output.ncbi_dataset_tsv}
+        | csvtk grep -t -f strain -P {input.segment_accessions} \
+        > {output.ncbi_dataset_tsv}
         """
 
 

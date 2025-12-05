@@ -9,10 +9,13 @@ output_dir: "runs/orov_l_tefe"
 reference_code: "PP154172.1"  # Tefe L segment
 taxon_id: 118655
 
+# Segment filter (for segmented viruses)
+segment: "L"
+
 # Sequence filtering parameters
 min_length: 5400   # ~80% of L segment (~6.8kb)
 max_length: 7500   # Filter to keep only L segment
-max_seqs: 1100
+max_seqs: 800
 allowed_divergence: 1500
 
 # Phylogenetic parameters

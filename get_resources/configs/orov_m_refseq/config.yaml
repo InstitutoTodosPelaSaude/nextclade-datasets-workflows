@@ -9,10 +9,13 @@ output_dir: "runs/orov_m_refseq"
 reference_code: "NC_005775.1"  # RefSeq M segment
 taxon_id: 118655
 
+# Segment filter (for segmented viruses)
+segment: "M"
+
 # Sequence filtering parameters
 min_length: 3600   # ~80% of M segment (~4.4kb)
 max_length: 5000   # Filter to keep only M segment
-max_seqs: 1100
+max_seqs: 800
 allowed_divergence: 1000
 
 # Phylogenetic parameters

@@ -9,10 +9,13 @@ output_dir: "runs/orov_s_refseq"
 reference_code: "NC_005777.1"  # RefSeq S segment
 taxon_id: 118655
 
+# Segment filter (for segmented viruses)
+segment: "S"
+
 # Sequence filtering parameters
 min_length: 603    # ~80% of S segment (~754bp)
 max_length: 1000   # Filter to keep only S segment
-max_seqs: 1100
+max_seqs: 800
 allowed_divergence: 600
 
 # Phylogenetic parameters
