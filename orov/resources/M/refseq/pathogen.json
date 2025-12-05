@@ -1,4 +1,8 @@
 {
+  "$schema": "https://raw.githubusercontent.com/nextstrain/nextclade/refs/heads/release/packages/nextclade-schemas/input-pathogen-json.schema.json",
+  "alignmentParams": {
+    "retryReverseComplement": true
+  },
   "attributes": {
     "name": "orov/M/refseq",
     "reference accession": "NC_005775.1",

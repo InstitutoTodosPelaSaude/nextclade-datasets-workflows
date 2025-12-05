@@ -33,8 +33,8 @@ rule make_dirs:
 
 rule filter:
     input:
-        sequences = config["input_file"]["fasta"],
-        metadata = config["input_file"]["tsv"]
+        sequences = lambda w: config["dataset_config"][w.build_name]["input_fasta"],
+        metadata = lambda w: config["dataset_config"][w.build_name]["input_tsv"]
     output:
         sequences = "results/{build_name}/filter/pre-filtered.fasta",
         metadata = "results/{build_name}/filter/pre-filtered.tsv"
