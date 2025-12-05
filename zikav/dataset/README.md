@@ -14,6 +14,6 @@ The dataset aims to enable rapid and accurate identification of the two main Zik
 
 The source code is available at [InstitutoTodosPelaSaude/nextclade-datasets-workflows](https://github.com/InstitutoTodosPelaSaude/nextclade-datasets-workflows/tree/main/zikav).
 
-For bugs, please open an [issue](https://github.com/InstitutoTodosPelaSaude/nextclade-datasets-workflows/issues)
+For bugs, please open an [issue](https://github.com/InstitutoTodosPelaSaude/nextclade-datasets-workflows/issues).
 
 Read more about Nextclade datasets in the Nextclade documentation: [Nextclade Datasets](https://docs.nextstrain.org/projects/nextclade/en/stable/user/datasets.html).
