@@ -40,7 +40,30 @@
   },
   "qc": {
     "frameShifts": {
-      "enabled": true
+      "enabled": true,
+      "ignoredFrameShifts": [
+        {
+          "codonRange": {
+            "begin": 789,
+            "end": 792
+          },
+          "cdsName": "L"
+        },
+        {
+          "codonRange": {
+            "begin": 798,
+            "end": 800
+          },
+          "cdsName": "L"
+        },
+        {
+          "codonRange": {
+            "begin": 847,
+            "end": 855
+          },
+          "cdsName": "L"
+        }
+      ]
     },
     "missingData": {
       "enabled": true,
