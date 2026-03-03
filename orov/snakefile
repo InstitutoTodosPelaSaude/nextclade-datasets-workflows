@@ -39,8 +39,9 @@ rule filter:
         sequences = "results/{build_name}/filter/pre-filtered.fasta",
         metadata = "results/{build_name}/filter/pre-filtered.tsv"
     params:
+        reference_id = lambda w: config["dataset_config"][w.build_name]["reference_id"],
         group_by = config["filter"]["group_by"],
-        sequences_per_group = config["filter"]["sequences_per_group"],
+        sequences_per_group = lambda w: "30" if w.build_name == "S/refseq" else config["filter"]["sequences_per_group"],
         min_length = lambda w: config["dataset_config"][w.build_name]["min_length"],
         max_length = lambda w: config["dataset_config"][w.build_name]["max_length"],
     resources:
@@ -48,6 +49,7 @@ rule filter:
         mem_mb = config["resources"]["default"]["mem_mb"]
     shell:
         """
+        echo {params.reference_id} > tmp_{params.reference_id}.txt
         augur filter \
             --sequences {input.sequences} \
             --metadata {input.metadata} \
@@ -56,7 +58,9 @@ rule filter:
             --group-by {params.group_by} \
             --min-length {params.min_length} \
             --max-length {params.max_length} \
-            --sequences-per-group {params.sequences_per_group} 
+            --include tmp_{params.reference_id}.txt \
+            --sequences-per-group {params.sequences_per_group}
+        rm tmp_{params.reference_id}.txt
         """
 
 rule align:

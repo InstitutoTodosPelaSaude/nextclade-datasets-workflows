@@ -1,4 +1,4 @@
-# Nextclade Dataset for "oroV" L segment based on RefSeq reference genome
+# Nextclade Dataset for "OROV" L segment based on RefSeq reference genome
 
 ## Dataset Attributes
 

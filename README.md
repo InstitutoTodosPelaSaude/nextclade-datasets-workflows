@@ -104,7 +104,7 @@ runs/<virus_name>/
 | Virus | Segments | Reference(s) | Status |
 |-------|----------|--------------|--------|
 | Zika virus | Unsegmented | NC_035889.1 | ✅ Complete |
-| Oropouche virus | L, M, S | RefSeq / Tefe | 🔄 In development |
+| Oropouche virus | L, M, S | RefSeq / Tefe |  ✅ Complete |
 
 ## Configuration
 

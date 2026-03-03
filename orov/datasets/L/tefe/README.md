@@ -1,4 +1,4 @@
-# Nextclade Dataset for "oroV" L segment based on Reference "ILMD_TF29"
+# Nextclade Dataset for "OROV" L segment based on Reference "ILMD_TF29"
 
 ## Dataset Attributes
 
