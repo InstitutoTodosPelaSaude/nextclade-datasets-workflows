@@ -7,25 +7,14 @@
   "attributes": {
     "name": "Zika virus",
     "reference accession": "NC_035889.1",
-    "reference name": "Natal RGN"
+    "reference name": "Natal RGN",
+    "experimental": true
   },
   "compatibility": {
     "cli": "3.0.0-alpha.0",
     "web": "3.0.0-alpha.0"
   },
-  "placementMaskRanges": [
-    {
-      "begin": 0,
-      "end": 108
-    },
-    {
-      "begin": 10380,
-      "end": 10808
-    }
-  ],
   "deprecated": false,
-  "enabled": true,
-  "experimental": true,
   "files": {
     "changelog": "CHANGELOG.md",
     "examples": "sequences.fasta",

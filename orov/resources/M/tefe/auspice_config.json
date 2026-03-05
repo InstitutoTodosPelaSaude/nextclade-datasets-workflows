@@ -35,5 +35,19 @@
     "map",
     "entropy",
     "frequencies"
-  ]
+  ],
+  "extensions": {
+    "nextclade": {
+      "placement_mask_ranges": [
+        {
+          "begin": 0,
+          "end": 20
+        },
+        {
+          "begin": 4283,
+          "end": 4371
+        }
+      ]
+    }
+  }
 }
